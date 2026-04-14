@@ -6,3 +6,4 @@ __pycache__/
 *.pyd
 .env
 mykalas_nail_art.db
+REMEMBER.txt
