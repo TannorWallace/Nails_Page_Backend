@@ -1,0 +1,5 @@
+AI IDEA! NAIL ART GENERATOR! FOR THE INDECISIVE
+
+uvicorn main:app --reload
+
+pytest tests/test_images.py -v -s
