@@ -1,4 +1,6 @@
+from datetime import datetime
 import os
+import shutil
 from typing import List
 import aiofiles
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
@@ -39,6 +41,38 @@ async def admin_upload_images(
     db.commit()
     db.refresh(db_image)
     return db_image
+
+#POST MULTIPLE IMAGES
+@router.post("/images/upload_mult", response_model=List[ArtImageOut])
+async def admin_post_mult_imgs(
+    files: List[UploadFile]=File(...),
+    title: str = "Nail Art by Mykala", #ok this is missing?
+    artist: str = "Mykala Wallace",
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)):
+    if not files or len(files) == 0:
+        raise HTTPException(status_code= status.HTTP_400_BAD_REQUEST, detail="No images loaded.")
+    uploaded_imgs = []
+    os.makedirs("static/images", exist_ok=True)
+#create file
+    for file in files: 
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{timestamp}_{file.filename}"
+        file_path = f"static/images/{filename}"
+#save file local
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+#save to db
+        new_image = ArtImage(
+            title=title,
+            image_url = f"/static/images/{filename}",
+            artist=artist
+        )
+        db.add(new_image)
+        db.commit()
+        db.refresh(new_image)
+        uploaded_imgs.append(new_image)
+    return uploaded_imgs
 
 #GET ALL IMAGES
 @router.get("/images")
