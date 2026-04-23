@@ -1,14 +1,14 @@
-from datetime import datetime
 import os
 import shutil
-from typing import List
 import aiofiles
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
-from sqlalchemy.orm import Session, joinedload
+from typing import List
 from database import get_db
+from datetime import datetime
 from models import ArtImage, Comment, User
-from schemas import AdminCommentOut, ArtImageCreate, ArtImageOut
+from sqlalchemy.orm import Session, joinedload
 from security import get_current_user, get_current_admin
+from schemas import AdminCommentOut, ArtImageCreate, ArtImageOut
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
 
 router = APIRouter(
     prefix="/admin",
@@ -218,15 +218,15 @@ async def get_user_comments(
 
 
 #ADMIN DELETE COMMENT
-@router.delete("/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def admin_delete_comment(
-    comment_id: int,
-    db: Session = Depends(get_db)
-):
-    comment = db.query(Comment).filter(Comment.id == comment_id).first()
-    if not comment:
-        raise HTTPException(status_code=404, detail="Comment not found")
+# @router.delete("/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
+# async def admin_delete_comment(
+#     comment_id: int,
+#     db: Session = Depends(get_db)
+# ):
+#     comment = db.query(Comment).filter(Comment.id == comment_id).first()
+#     if not comment:
+#         raise HTTPException(status_code=404, detail="Comment not found")
 
-    db.delete(comment)
-    db.commit()
-    return {"message": f"Comment {comment_id} deleted by admin"}
+#     db.delete(comment)
+#     db.commit()
+#     return {"message": f"Comment {comment_id} deleted by admin"}

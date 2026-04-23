@@ -1,8 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy.orm import Session
-from database import get_db
 from models import User
+from database import get_db
+from sqlalchemy.orm import Session
+from fastapi.security import OAuth2PasswordRequestForm
+from fastapi import APIRouter, Depends, HTTPException, status
 from schemas import UserCreate, AdminUserCreate, UserOut, Token
 from security import get_password_hash, verify_password, create_access_token, get_current_admin
 
@@ -70,5 +70,5 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    access_token = create_access_token(data={"sub": user.username})
+    access_token = create_access_token(data={"sub": user.username,"is_admin":user.is_admin})
     return {"access_token": access_token, "token_type": "bearer"}

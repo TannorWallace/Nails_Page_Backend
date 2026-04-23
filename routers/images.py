@@ -1,8 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-
 from database import get_db
+from sqlalchemy.orm import Session
 from models import ArtImage, Comment
+from fastapi import APIRouter, Depends, HTTPException
 
 router = APIRouter(
     prefix="/images",

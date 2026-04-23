@@ -85,16 +85,41 @@ async def update_comment(
             "updated_at": comment.updated_at,
             "username": comment.user.username
     }
-#DELETE COMMENT
-
-@router.delete("/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_comment(comment_id:int, db: Session = Depends(get_db), current_user = Depends(get_current_user)):
-    comment= db.query(Comment).filter(Comment.id == comment_id).first()
-    if not comment:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Could not Locate Comment.")
-    if comment.user_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only delete your own comments.")
+#region KEEP THIS JIC
+# #DELETE COMMENT - keep if admin delete doesnt work
+# @router.delete("/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
+# async def delete_comment(comment_id:int, db: Session = Depends(get_db), current_user = Depends(get_current_user)):
+#     comment= db.query(Comment).filter(Comment.id == comment_id).first()
+#     if not comment:
+#         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Could not Locate Comment.")
     
+#     if comment.user_id != current_user.id:
+#         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only delete your own comments.")
+    
+#     db.delete(comment)
+#     db.commit()
+#endregion    
+
+# DELETE COMMENT / ADMIN DELETE ANY (REDUEX)
+@router.delete("/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_comment(
+    comment_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    comment = db.query(Comment).filter(Comment.id == comment_id).first()
+    if not comment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail="Comment not found."
+        )
+
+    # Allow delete if: user owns the comment OR user is admin
+    if comment.user_id != current_user.id and not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only delete your own comments."
+        )
+
     db.delete(comment)
     db.commit()
-    
