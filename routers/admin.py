@@ -4,7 +4,7 @@ import shutil
 from typing import List
 import aiofiles
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from database import get_db
 from models import ArtImage, Comment, User
 from schemas import AdminCommentOut, ArtImageCreate, ArtImageOut
@@ -176,7 +176,46 @@ async def admin_get_comment_by_id(
     if not comment:
         raise HTTPException(status_code=404, detail="Comment not found")
     return comment
-    
+
+#ADMIN GET COMMENTS BY USER ID    
+@router.get("/user/{user_id}", response_model=List[AdminCommentOut])
+async def get_user_comments(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin)
+):
+    #check for user first
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=" User not found. User profile may have been deleted.")
+
+
+
+    comments = (
+        db.query(Comment)
+        .filter(Comment.user_id ==user_id)
+        .options(joinedload(Comment.image))
+        .order_by(Comment.created_at.desc())
+        .all()
+    )
+    #oh yeah. gotta check if there are comments present.
+    if not comments:
+        raise HTTPException(status_code= status.HTTP_404_NOT_FOUND, detail="Comments not found for this user. Comments may have already been removed.")
+
+    return [
+        {
+            "id": com.id,
+            "username": com.user.username,
+            "text": com.text,
+            "image_id": com.image_id,
+            "image_title": com.image.title,
+            "created_at": com.created_at,
+            "updated_at": com.updated_at,
+
+        }
+        for com in comments
+    ]
+
 
 #ADMIN DELETE COMMENT
 @router.delete("/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
