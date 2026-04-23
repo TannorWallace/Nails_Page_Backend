@@ -80,3 +80,25 @@ def test_admin_delete_comment(admin_client, db_session):
     _, _, _, comment = create_test_data(db_session)
     response = admin_client.delete(f"/admin/comments/{comment.id}")
     assert response.status_code == 204
+
+def test_admin_get_comments_by_user(admin_client, db_session):
+    """GET /admin/user/{user_id} → returns all comments made by that user"""
+    regular, admin, image, comment = create_test_data(db_session)
+    
+    response = admin_client.get(f"/admin/user/{regular.id}")
+    
+    assert response.status_code == 200
+    data = response.json()
+    
+    assert len(data) >= 1
+    assert data[0]["username"] == regular.username
+    assert data[0]["text"] == comment.text
+    assert data[0]["image_title"] == image.title
+
+
+def test_admin_get_comments_by_nonexistent_user(admin_client):
+    """GET /admin/user/{invalid_id} → should return nice 404 message"""
+    response = admin_client.get("/admin/user/999999")
+    
+    assert response.status_code == 404
+    assert "User not found. User profile may have been deleted." in response.json()["detail"]
