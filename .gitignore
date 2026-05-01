@@ -1,10 +1,65 @@
-# test
+# ========================================
+# Backend - FastAPI + PostgreSQL + Alembic
+# ========================================
+
+# Virtual Environment
 .venv/
+venv/
+env/
+ENV/
+
+# Python cache & bytecode
 __pycache__/
-.pytest_cache/
 *.pyc
 *.pyo
 *.pyd
+.Python
+*.so
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+.pytest_cache/
+
+# Environment variables - NEVER commit secrets
 .env
+.env.local
+.env.*.local
+
+# Old SQLite database (no longer used)
+*.db
 mykalas_nail_art.db
-REMEMBER.txt
+
+# Alembic
+alembic/.cache/
+alembic/versions/*.pyc
+
+# Logs
+*.log
+logs/
+log/
+
+# Static uploaded files (large images - don't commit to git)
+static/images/*.jpg
+static/images/*.jpeg
+static/images/*.png
+static/images/*.webp
+static/images/*.gif
+
+# IDE / Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Temporary / Build files
+*.tmp
+*.temp
+__pycache__/
+
+# pip / setuptools
+pip-log.txt
+pip-delete-this-directory.txt
