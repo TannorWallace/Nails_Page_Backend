@@ -217,16 +217,21 @@ async def get_user_comments(
     ]
 
 
-#ADMIN DELETE COMMENT
-# @router.delete("/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
-# async def admin_delete_comment(
-#     comment_id: int,
-#     db: Session = Depends(get_db)
-# ):
-#     comment = db.query(Comment).filter(Comment.id == comment_id).first()
-#     if not comment:
-#         raise HTTPException(status_code=404, detail="Comment not found")
+# ADMIN DELETE COMMENT - Can delete ANY comment
+@router.delete("/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def admin_delete_comment(
+    comment_id: int,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_current_admin)   # Must be admin
+):
+    comment = db.query(Comment).filter(Comment.id == comment_id).first()
+    if not comment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail="Comment not found."
+        )
 
-#     db.delete(comment)
-#     db.commit()
-#     return {"message": f"Comment {comment_id} deleted by admin"}
+    db.delete(comment)
+    db.commit()
+
+    return {"message": "Comment deleted successfully by admin"}

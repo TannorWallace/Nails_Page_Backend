@@ -1,5 +1,6 @@
 import pytest
 from models import User, Comment, ArtImage
+from tests.test_comments import create_test_user_and_image
 
 def create_test_data(db_session):
     """Clean + create test users, image, and comment"""
@@ -75,11 +76,32 @@ def test_admin_get_all_comments(admin_client, db_session):
     response = admin_client.get("/admin/comments")
     assert response.status_code == 200
 
+# Altering this test to create a test comment so ensure the admin delete works
+# def test_admin_delete_comment(admin_client, db_session):
+#     _, _, _, comment = create_test_data(db_session)
+#     response = admin_client.delete(f"/admin/comments/{comment.id}")
+#     assert response.status_code == 204
 
+
+#New way 
 def test_admin_delete_comment(admin_client, db_session):
-    _, _, _, comment = create_test_data(db_session)
+    """Admin can successfully delete any comment"""
+    user, image = create_test_user_and_image(db_session)
+    
+    comment = Comment(
+        text="Test comment to be deleted by admin",
+        image_id=image.id,
+        user_id=user.id
+    )
+    db_session.add(comment)
+    db_session.commit()
+    db_session.refresh(comment)
+
     response = admin_client.delete(f"/admin/comments/{comment.id}")
+    
     assert response.status_code == 204
+#END NEW FIXED TEST
+
 
 def test_admin_get_comments_by_user(admin_client, db_session):
     """GET /admin/user/{user_id} → returns all comments made by that user"""
