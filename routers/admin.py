@@ -1,7 +1,9 @@
 import os
 import shutil
 import aiofiles
+import cloudinary
 from typing import List
+import cloudinary.uploader
 from database import get_db
 from datetime import datetime
 from models import ArtImage, Comment, User
@@ -235,3 +237,66 @@ async def admin_delete_comment(
     db.commit()
 
     return {"message": "Comment deleted successfully by admin"}
+
+
+# NEW CLOUDINGARY FUNCTIONALITY. 
+
+# ADMIN POST SINGLE IMAGE TO CLOUDINARY
+@router.post("/images/cloudinary", response_model=ArtImageOut)
+async def admin_upload_images_cloudinary(
+    title: str = Form(...),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_current_user)
+):
+    # Upload to Cloudinary
+    result = cloudinary.uploader.upload(
+        file.file,
+        folder="nails_by_mykala",
+        public_id=f"nail_art_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    )
+
+    db_image = ArtImage(
+        title=title,
+        image_url=result["secure_url"],
+        artist="Mykala Wallace",
+        uploaded_by_id=current_admin.id
+    )
+    db.add(db_image)
+    db.commit()
+    db.refresh(db_image)
+    return db_image
+
+
+# POST MULTIPLE IMAGES TO CLOUDINARY (this is the one you'll use most)
+@router.post("/images/upload_mult/cloudinary", response_model=List[ArtImageOut])
+async def admin_post_mult_imgs_cloudinary(
+    files: List[UploadFile] = File(...),
+    title: str = "Nail Art by Mykala",
+    artist: str = "Mykala Wallace",
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    if not files or len(files) == 0:
+        raise HTTPException(status_code=400, detail="No images loaded.")
+
+    uploaded_imgs = []
+
+    for file in files:
+        result = cloudinary.uploader.upload(
+            file.file,
+            folder="nails_by_mykala",
+            public_id=f"nail_art_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        )
+
+        new_image = ArtImage(
+            title=title,
+            image_url=result["secure_url"],
+            artist=artist
+        )
+        db.add(new_image)
+        db.commit()
+        db.refresh(new_image)
+        uploaded_imgs.append(new_image)
+
+    return uploaded_imgs
