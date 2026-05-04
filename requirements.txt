@@ -25,6 +25,9 @@ python-multipart==0.0.22
 # Async File Handling
 aiofiles==25.1.0
 
+# Image Hosting (Cloudinary)
+cloudinary
+
 # HTTP Client
 httpx==0.28.1
 requests==2.32.5
