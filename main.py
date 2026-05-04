@@ -21,7 +21,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 #load router endpoint .pys
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# app.mount("/static", StaticFiles(directory="static"), name="static")
 app.include_router(auth.router)
 app.include_router(admin.router)
 app.include_router(comments.router)

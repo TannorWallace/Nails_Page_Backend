@@ -1,7 +1,10 @@
 # ========================================
 # Backend - FastAPI + PostgreSQL + Alembic
 # ========================================
-
+create_db.py
+alembic.ini
+reset_db.py
+.env
 # Virtual Environment
 .venv/
 venv/
