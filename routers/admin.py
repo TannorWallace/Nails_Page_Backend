@@ -1,83 +1,80 @@
+import os
+import shutil
+import aiofiles
 import cloudinary
-import cloudinary.uploader
 from typing import List
-from datetime import datetime
+import cloudinary.uploader
 from database import get_db
+from datetime import datetime
 from models import ArtImage, Comment, User
 from sqlalchemy.orm import Session, joinedload
 from security import get_current_user, get_current_admin
-from schemas import AdminCommentOut, ArtImageOut
+from schemas import AdminCommentOut, ArtImageCreate, ArtImageOut
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
 
 router = APIRouter(
     prefix="/admin",
     tags=["Admin"],
     dependencies=[Depends(get_current_admin)]
-)
+    ) #might need to take off the dependency until later.
 
-# ====================== CLOUDINARY UPLOADS (ONLY) ======================
+UPLOAD_DIR = "static/images"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# ADMIN POST SINGLE IMAGE
-@router.post("/images/", response_model=ArtImageOut)
+#ADMIN POST IMAGES
+@router.post("/images/",response_model=ArtImageOut)
 async def admin_upload_images(
-    title: str = Form(...),
+    title:str =Form(...),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_admin: User = Depends(get_current_user)
 ):
-    result = cloudinary.uploader.upload(
-        file.file,
-        folder="nails_by_mykala",
-        public_id=f"nail_art_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    )
+    file_path = f"{UPLOAD_DIR}/{file.filename}"
+    async with aiofiles.open(file_path, "wb") as f:
+        content = await file.read()
+        await f.write(content)
 
     db_image = ArtImage(
-        title=title,
-        image_url=result["secure_url"],
-        artist="Mykala Wallace",
-        uploaded_by_id=current_admin.id
+        title = title,
+        image_url=f"/static/images/{file.filename}",
+        uploaded_by_id= current_admin.id
     )
     db.add(db_image)
     db.commit()
     db.refresh(db_image)
     return db_image
 
-
-# ADMIN POST MULTIPLE IMAGES (recommended)
+#POST MULTIPLE IMAGES
 @router.post("/images/upload_mult", response_model=List[ArtImageOut])
 async def admin_post_mult_imgs(
-    files: List[UploadFile] = File(...),
-    title: str = "Nail Art by Mykala",
+    files: List[UploadFile]=File(...),
+    title: str = "Nail Art by Mykala", #ok this is missing?
     artist: str = "Mykala Wallace",
     current_admin: User = Depends(get_current_admin),
-    db: Session = Depends(get_db)
-):
+    db: Session = Depends(get_db)):
     if not files or len(files) == 0:
-        raise HTTPException(status_code=400, detail="No images loaded.")
-
+        raise HTTPException(status_code= status.HTTP_400_BAD_REQUEST, detail="No images loaded.")
     uploaded_imgs = []
-
-    for file in files:
-        result = cloudinary.uploader.upload(
-            file.file,
-            folder="nails_by_mykala",
-            public_id=f"nail_art_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        )
-
+    os.makedirs("static/images", exist_ok=True)
+#create file
+    for file in files: 
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{timestamp}_{file.filename}"
+        file_path = f"static/images/{filename}"
+#save file local
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+#save to db
         new_image = ArtImage(
             title=title,
-            image_url=result["secure_url"],
+            image_url = f"/static/images/{filename}",
             artist=artist
         )
         db.add(new_image)
         db.commit()
         db.refresh(new_image)
         uploaded_imgs.append(new_image)
-
     return uploaded_imgs
-
-
-# ====================== ALL OTHER EXISTING ENDPOINTS (unchanged) ======================
 
 #GET ALL IMAGES
 @router.get("/images")
@@ -87,13 +84,14 @@ async def get_all_images(db:Session=Depends(get_db)):
 
 #GET IMAGE BY ID
 @router.get("/images/{image_id}")
-async def get_image_by_id(image_id:int, db: Session=Depends(get_db)):
-    image = db.query(ArtImage).filter(ArtImage.id == image_id).first()
+async def get_user_by_id(image_id:int, db: Session=Depends(get_db)):
+    image = db.query(User).filter(User.id == image_id).first()
     if not image:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No user by that Id could be found.")
     return image
 
-#DELETE IMAGE (no local file deletion anymore)
+
+#delete IMAGE
 @router.delete("/images/{image_id}")
 async def admin_delete_img(image_id:int,
                     db:Session = Depends(get_db),
@@ -101,10 +99,15 @@ async def admin_delete_img(image_id:int,
     image = db.query(ArtImage).filter(ArtImage.id == image_id).first()
     if not image:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image could not be located")
+
+    #Delete from /images folder
+    file_path = image.image_url.replace("/static/images/", "static/images/")
+    if os.path.exists(file_path):
+        os.remove(file_path)
     
     db.delete(image)
     db.commit()
-    return {"message":"Image removed."}
+    return {"message":"Item removed."}
 
 #GET ALL USERS
 @router.get("/users")
@@ -127,10 +130,12 @@ def admin_delete_user(
     db: Session = Depends(get_db),
     current_admin: User = Depends(get_current_admin)
 ):
+    """ADMIN ONLY - Delete any user (cannot delete yourself)"""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    #prevent deleting yo'self
     if user.id == current_admin.id:
         raise HTTPException(status_code=400, detail="You cannot delete your own admin account")
 
@@ -139,13 +144,14 @@ def admin_delete_user(
     return {"message": f"User {user.username} deleted successfully"}
 
 #ADMIN GET COMMENTS
-@router.get("/comments", response_model=List[AdminCommentOut])
+@router.get("/comments", response_model=List[AdminCommentOut]) #List not list...dang that took a while :/
 async def get_all_comments(db: Session = Depends(get_db)):
+
     comments = (
          db.query(Comment)
         .join(User, Comment.user_id == User.id)
         .join(ArtImage, Comment.image_id == ArtImage.id)
-        .order_by(Comment.created_at.desc())
+        .order_by(Comment.created_at.desc())   # newest first
         .all()
     )
 
@@ -180,20 +186,23 @@ async def get_user_comments(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin)
 ):
+    #check for user first
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=" User not found. User profile may have been deleted.")
+
+
 
     comments = (
         db.query(Comment)
-        .filter(Comment.user_id == user_id)
+        .filter(Comment.user_id ==user_id)
         .options(joinedload(Comment.image))
         .order_by(Comment.created_at.desc())
         .all()
     )
-
+    #oh yeah. gotta check if there are comments present.
     if not comments:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No comments found for this user.")
+        raise HTTPException(status_code= status.HTTP_404_NOT_FOUND, detail="Comments not found for this user. Comments may have already been removed.")
 
     return [
         {
@@ -204,21 +213,89 @@ async def get_user_comments(
             "image_title": com.image.title,
             "created_at": com.created_at,
             "updated_at": com.updated_at,
+
         }
         for com in comments
     ]
 
-# ADMIN DELETE COMMENT
+
+# ADMIN DELETE COMMENT - Can delete ANY comment
 @router.delete("/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def admin_delete_comment(
     comment_id: int,
     db: Session = Depends(get_db),
-    current_admin: User = Depends(get_current_admin)
+    current_admin: User = Depends(get_current_admin)   # Must be admin
 ):
     comment = db.query(Comment).filter(Comment.id == comment_id).first()
     if not comment:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail="Comment not found."
+        )
 
     db.delete(comment)
     db.commit()
+
     return {"message": "Comment deleted successfully by admin"}
+
+
+# ====================== NEW CLOUDINARY ENDPOINTS (added at the bottom) ======================
+
+# ADMIN POST SINGLE IMAGE TO CLOUDINARY
+@router.post("/images/cloudinary", response_model=ArtImageOut)
+async def admin_upload_images_cloudinary(
+    title: str = Form(...),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_current_user)
+):
+    result = cloudinary.uploader.upload(
+        file.file,
+        folder="nails_by_mykala",
+        public_id=f"nail_art_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    )
+
+    db_image = ArtImage(
+        title=title,
+        image_url=result["secure_url"],
+        artist="Mykala Wallace",
+        uploaded_by_id=current_admin.id
+    )
+    db.add(db_image)
+    db.commit()
+    db.refresh(db_image)
+    return db_image
+
+
+# POST MULTIPLE IMAGES TO CLOUDINARY
+@router.post("/images/upload_mult/cloudinary", response_model=List[ArtImageOut])
+async def admin_post_mult_imgs_cloudinary(
+    files: List[UploadFile] = File(...),
+    title: str = "Nail Art by Mykala",
+    artist: str = "Mykala Wallace",
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    if not files or len(files) == 0:
+        raise HTTPException(status_code=400, detail="No images loaded.")
+
+    uploaded_imgs = []
+
+    for file in files:
+        result = cloudinary.uploader.upload(
+            file.file,
+            folder="nails_by_mykala",
+            public_id=f"nail_art_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        )
+
+        new_image = ArtImage(
+            title=title,
+            image_url=result["secure_url"],
+            artist=artist
+        )
+        db.add(new_image)
+        db.commit()
+        db.refresh(new_image)
+        uploaded_imgs.append(new_image)
+
+    return uploaded_imgs
