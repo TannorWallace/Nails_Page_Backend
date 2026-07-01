@@ -1,8 +1,10 @@
+import asyncio
 import cloudinary
 import cloudinary.uploader
 from typing import List
 from database import get_db
 from datetime import datetime
+from typing import List, Optional
 from models import ArtImage, Comment, User
 from sqlalchemy.orm import Session, joinedload
 from security import get_current_user, get_current_admin, get_password_hash
@@ -69,24 +71,33 @@ async def admin_upload_images_cloudinary(
     return db_image
 
 
-@router.post("/images/upload_mult/cloudinary", response_model=List[ArtImageOut], dependencies=[Depends(get_current_admin)])
+
+
+@router.post(
+    "/images/upload_mult/cloudinary", 
+    response_model=List[ArtImageOut],
+    dependencies=[Depends(get_current_admin)],
+    summary="Upload multiple images at once (faster)"
+)
 async def admin_post_mult_imgs_cloudinary(
-    files: List[UploadFile] = File(...),
-    title: str = "Nail Art by Mykala",
-    artist: str = "Mykala Wallace",
+    files: List[UploadFile] = File(..., description="Select multiple images"),
+    title: str = Form("Nail Art by Mykala", description="Default title if none provided per image"),
+    artist: str = Form("Mykala Wallace"),
     current_admin: User = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
-    if not files or len(files) == 0:
-        raise HTTPException(status_code=400, detail="No images loaded.")
+    if not files:
+        raise HTTPException(status_code=400, detail="No images uploaded.")
 
-    uploaded_imgs = []
+    uploaded_images = []
 
-    for file in files:
-        result = cloudinary.uploader.upload(
+    async def upload_single(file: UploadFile):
+        """Upload one image to Cloudinary"""
+        result = await asyncio.to_thread(
+            cloudinary.uploader.upload,
             file.file,
             folder="nails_by_mykala",
-            public_id=f"nail_art_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            public_id=f"nail_art_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{file.filename}"
         )
 
         new_image = ArtImage(
@@ -98,9 +109,13 @@ async def admin_post_mult_imgs_cloudinary(
         db.add(new_image)
         db.commit()
         db.refresh(new_image)
-        uploaded_imgs.append(new_image)
+        return new_image
 
-    return uploaded_imgs
+    # Upload all images in parallel (much faster)
+    tasks = [upload_single(file) for file in files]
+    uploaded_images = await asyncio.gather(*tasks)
+
+    return uploaded_images
 
 
 # ====================== OTHER PROTECTED ADMIN ROUTES ======================
