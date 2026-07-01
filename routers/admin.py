@@ -1,248 +1,50 @@
-import os
-import shutil
-import aiofiles
 import cloudinary
-from typing import List
 import cloudinary.uploader
+from typing import List
 from database import get_db
 from datetime import datetime
 from models import ArtImage, Comment, User
 from sqlalchemy.orm import Session, joinedload
-from security import get_current_user, get_current_admin
-from schemas import AdminCommentOut, ArtImageCreate, ArtImageOut
+from security import get_current_user, get_current_admin, get_password_hash
+from schemas import AdminCommentOut, AdminUserCreate, ArtImageOut, UserOut
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
 
+# Router has NO global dependency so /admin/users/ can stay open
 router = APIRouter(
     prefix="/admin",
-    tags=["Admin"],
-    dependencies=[Depends(get_current_admin)]
-    ) #might need to take off the dependency until later.
+    tags=["Admin"]
+)
 
-UPLOAD_DIR = "static/images"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+# ====================== ADMIN USER CREATION (FULLY OPEN - NO AUTH) ======================
 
-#ADMIN POST IMAGES
-@router.post("/images/",response_model=ArtImageOut)
-async def admin_upload_images(
-    title:str =Form(...),
-    file: UploadFile = File(...),
+@router.post("/users/", response_model=UserOut)
+def admin_create_user(
+    user: AdminUserCreate,
     db: Session = Depends(get_db),
-    current_admin: User = Depends(get_current_user)
 ):
-    file_path = f"{UPLOAD_DIR}/{file.filename}"
-    async with aiofiles.open(file_path, "wb") as f:
-        content = await file.read()
-        await f.write(content)
+    """Completely open endpoint for testing - Create admin users at will"""
+    db_user = db.query(User).filter(
+        (User.username == user.username) | (User.email == user.email)
+    ).first()
+    if db_user:
+        raise HTTPException(status_code=400, detail="Username or email already registered")
 
-    db_image = ArtImage(
-        title = title,
-        image_url=f"/static/images/{file.filename}",
-        uploaded_by_id= current_admin.id
+    hashed_password = get_password_hash(user.password)
+    db_user = User(
+        username=user.username,
+        email=user.email,
+        hashed_password=hashed_password,
+        is_admin=user.is_admin
     )
-    db.add(db_image)
+    db.add(db_user)
     db.commit()
-    db.refresh(db_image)
-    return db_image
-
-#POST MULTIPLE IMAGES
-@router.post("/images/upload_mult", response_model=List[ArtImageOut])
-async def admin_post_mult_imgs(
-    files: List[UploadFile]=File(...),
-    title: str = "Nail Art by Mykala", #ok this is missing?
-    artist: str = "Mykala Wallace",
-    current_admin: User = Depends(get_current_admin),
-    db: Session = Depends(get_db)):
-    if not files or len(files) == 0:
-        raise HTTPException(status_code= status.HTTP_400_BAD_REQUEST, detail="No images loaded.")
-    uploaded_imgs = []
-    os.makedirs("static/images", exist_ok=True)
-#create file
-    for file in files: 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{timestamp}_{file.filename}"
-        file_path = f"static/images/{filename}"
-#save file local
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-#save to db
-        new_image = ArtImage(
-            title=title,
-            image_url = f"/static/images/{filename}",
-            artist=artist
-        )
-        db.add(new_image)
-        db.commit()
-        db.refresh(new_image)
-        uploaded_imgs.append(new_image)
-    return uploaded_imgs
-
-#GET ALL IMAGES
-@router.get("/images")
-async def get_all_images(db:Session=Depends(get_db)):
-    image_list = db.query(ArtImage).order_by(ArtImage.created_at.asc()).all()
-    return image_list
-
-#GET IMAGE BY ID
-@router.get("/images/{image_id}")
-async def get_user_by_id(image_id:int, db: Session=Depends(get_db)):
-    image = db.query(User).filter(User.id == image_id).first()
-    if not image:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No user by that Id could be found.")
-    return image
+    db.refresh(db_user)
+    return db_user
 
 
-#delete IMAGE
-@router.delete("/images/{image_id}")
-async def admin_delete_img(image_id:int,
-                    db:Session = Depends(get_db),
-                    current_admin: User = Depends(get_current_admin)):
-    image = db.query(ArtImage).filter(ArtImage.id == image_id).first()
-    if not image:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image could not be located")
+# ====================== CLOUDINARY IMAGE UPLOADS (PROTECTED) ======================
 
-    #Delete from /images folder
-    file_path = image.image_url.replace("/static/images/", "static/images/")
-    if os.path.exists(file_path):
-        os.remove(file_path)
-    
-    db.delete(image)
-    db.commit()
-    return {"message":"Item removed."}
-
-#GET ALL USERS
-@router.get("/users")
-async def get_all_users(db:Session=Depends(get_db)):
-    users_list = db.query(User).order_by(User.id.asc()).all()
-    return users_list
-
-#GET USER BY ID
-@router.get("/users/{user_id}")
-async def get_user_by_id(user_id:int, db: Session=Depends(get_db)):
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No user by that Id could be found.")
-    return user
-
-#delete USER
-@router.delete("/users/{user_id}")
-def admin_delete_user(
-    user_id: int,
-    db: Session = Depends(get_db),
-    current_admin: User = Depends(get_current_admin)
-):
-    """ADMIN ONLY - Delete any user (cannot delete yourself)"""
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    #prevent deleting yo'self
-    if user.id == current_admin.id:
-        raise HTTPException(status_code=400, detail="You cannot delete your own admin account")
-
-    db.delete(user)
-    db.commit()
-    return {"message": f"User {user.username} deleted successfully"}
-
-#ADMIN GET COMMENTS
-@router.get("/comments", response_model=List[AdminCommentOut]) #List not list...dang that took a while :/
-async def get_all_comments(db: Session = Depends(get_db)):
-
-    comments = (
-         db.query(Comment)
-        .join(User, Comment.user_id == User.id)
-        .join(ArtImage, Comment.image_id == ArtImage.id)
-        .order_by(Comment.created_at.desc())   # newest first
-        .all()
-    )
-
-    return [
-        {
-            "id": com.id,
-            "text": com.text,
-            "created_at": com.created_at,
-            "updated_at": com.updated_at,
-            "username": com.user.username,
-            "image_id": com.image_id,
-            "image_title": com.image.title
-        }
-        for com in comments
-    ]
-
-#ADMIN GET COMMENT BY ID
-@router.get("/comments/{comment_id}", status_code=status.HTTP_200_OK)
-async def admin_get_comment_by_id(
-    comment_id: int,
-    db: Session = Depends(get_db)
-):
-    comment = db.query(Comment).filter(Comment.id == comment_id).first()
-    if not comment:
-        raise HTTPException(status_code=404, detail="Comment not found")
-    return comment
-
-#ADMIN GET COMMENTS BY USER ID    
-@router.get("/user/{user_id}", response_model=List[AdminCommentOut])
-async def get_user_comments(
-    user_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin)
-):
-    #check for user first
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=" User not found. User profile may have been deleted.")
-
-
-
-    comments = (
-        db.query(Comment)
-        .filter(Comment.user_id ==user_id)
-        .options(joinedload(Comment.image))
-        .order_by(Comment.created_at.desc())
-        .all()
-    )
-    #oh yeah. gotta check if there are comments present.
-    if not comments:
-        raise HTTPException(status_code= status.HTTP_404_NOT_FOUND, detail="Comments not found for this user. Comments may have already been removed.")
-
-    return [
-        {
-            "id": com.id,
-            "username": com.user.username,
-            "text": com.text,
-            "image_id": com.image_id,
-            "image_title": com.image.title,
-            "created_at": com.created_at,
-            "updated_at": com.updated_at,
-
-        }
-        for com in comments
-    ]
-
-
-# ADMIN DELETE COMMENT - Can delete ANY comment
-@router.delete("/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def admin_delete_comment(
-    comment_id: int,
-    db: Session = Depends(get_db),
-    current_admin: User = Depends(get_current_admin)   # Must be admin
-):
-    comment = db.query(Comment).filter(Comment.id == comment_id).first()
-    if not comment:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, 
-            detail="Comment not found."
-        )
-
-    db.delete(comment)
-    db.commit()
-
-    return {"message": "Comment deleted successfully by admin"}
-
-
-# ====================== NEW CLOUDINARY ENDPOINTS (added at the bottom) ======================
-
-# ADMIN POST SINGLE IMAGE TO CLOUDINARY
-@router.post("/images/cloudinary", response_model=ArtImageOut)
+@router.post("/images/cloudinary", response_model=ArtImageOut, dependencies=[Depends(get_current_admin)])
 async def admin_upload_images_cloudinary(
     title: str = Form(...),
     file: UploadFile = File(...),
@@ -267,8 +69,7 @@ async def admin_upload_images_cloudinary(
     return db_image
 
 
-# POST MULTIPLE IMAGES TO CLOUDINARY
-@router.post("/images/upload_mult/cloudinary", response_model=List[ArtImageOut])
+@router.post("/images/upload_mult/cloudinary", response_model=List[ArtImageOut], dependencies=[Depends(get_current_admin)])
 async def admin_post_mult_imgs_cloudinary(
     files: List[UploadFile] = File(...),
     title: str = "Nail Art by Mykala",
@@ -291,7 +92,8 @@ async def admin_post_mult_imgs_cloudinary(
         new_image = ArtImage(
             title=title,
             image_url=result["secure_url"],
-            artist=artist
+            artist=artist,
+            uploaded_by_id=current_admin.id
         )
         db.add(new_image)
         db.commit()
@@ -299,3 +101,81 @@ async def admin_post_mult_imgs_cloudinary(
         uploaded_imgs.append(new_image)
 
     return uploaded_imgs
+
+
+# ====================== OTHER PROTECTED ADMIN ROUTES ======================
+
+@router.get("/images", dependencies=[Depends(get_current_admin)])
+async def get_all_images(db: Session = Depends(get_db)):
+    return db.query(ArtImage).order_by(ArtImage.created_at.asc()).all()
+
+
+@router.delete("/images/{image_id}", dependencies=[Depends(get_current_admin)])
+async def admin_delete_img(
+    image_id: int,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_current_admin)
+):
+    image = db.query(ArtImage).filter(ArtImage.id == image_id).first()
+    if not image:
+        raise HTTPException(status_code=404, detail="Image could not be located")
+    db.delete(image)
+    db.commit()
+    return {"message": "Item removed."}
+
+
+@router.get("/users", dependencies=[Depends(get_current_admin)])
+async def get_all_users(db: Session = Depends(get_db)):
+    return db.query(User).order_by(User.id.asc()).all()
+
+
+@router.delete("/users/{user_id}", dependencies=[Depends(get_current_admin)])
+def admin_delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_current_admin)
+):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.id == current_admin.id:
+        raise HTTPException(status_code=400, detail="You cannot delete your own admin account")
+    db.delete(user)
+    db.commit()
+    return {"message": f"User {user.username} deleted successfully"}
+
+
+@router.get("/comments", response_model=List[AdminCommentOut], dependencies=[Depends(get_current_admin)])
+async def get_all_comments(db: Session = Depends(get_db)):
+    comments = (
+        db.query(Comment)
+        .join(User, Comment.user_id == User.id)
+        .join(ArtImage, Comment.image_id == ArtImage.id)
+        .order_by(Comment.created_at.desc())
+        .all()
+    )
+    return [
+        {
+            "id": com.id,
+            "text": com.text,
+            "created_at": com.created_at,
+            "updated_at": com.updated_at,
+            "username": com.user.username,
+            "image_id": com.image_id,
+            "image_title": com.image.title
+        }
+        for com in comments
+    ]
+
+
+@router.delete("/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(get_current_admin)])
+async def admin_delete_comment(
+    comment_id: int,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_current_admin)
+):
+    comment = db.query(Comment).filter(Comment.id == comment_id).first()
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    db.delete(comment)
+    db.commit()

@@ -4,27 +4,28 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 
-# Load environment variables
 load_dotenv()
 
-SQLALCHEMY_DATABASE_URL = "sqlite:///./mykalas_nail_art.db"
-
-# PostgreSQL connection URL from .env
+# Use SQLite for local development (much more reliable)
+# Use PostgreSQL only when DATABASE_URL is set (i.e. on Render)
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-if not DATABASE_URL:
-    raise ValueError("DATABASE_URL is not set in .env file")
+if DATABASE_URL:
+    # Production / Render
+    print("Using PostgreSQL (Render)")
+    engine = create_engine(DATABASE_URL)
+else:
+    # Local development
+    print("Using SQLite for local development")
+    DATABASE_URL = "sqlite:///./dev.db"
+    engine = create_engine(
+        DATABASE_URL, 
+        connect_args={"check_same_thread": False}  # Needed for SQLite
+    )
 
-# Create engine
-engine = create_engine(DATABASE_URL)
-
-# Create session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-# Base class for models
 Base = declarative_base()
 
-# Dependency to get DB session
 def get_db():
     db = SessionLocal()
     try:

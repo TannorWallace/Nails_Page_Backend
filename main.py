@@ -1,41 +1,38 @@
 from fastapi import FastAPI
-from database import Base, engine
-from fastapi.staticfiles import StaticFiles
-from routers import admin, auth, comments, images
 from fastapi.middleware.cors import CORSMiddleware
+import cloudinary_config
 
-# Create tables on startup
+# Import models FIRST so they register with Base
+from models import User, ArtImage, Comment
+from database import Base, engine
+
+# Now create tables (this will work)
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(
-    debug=True,
-    title="Nail Art Portfolio API",
-    description="Backend for Nails by Mykala"
-)
+app = FastAPI(title="Nails by Mykala API", debug=True)
 
-# CORS - Allow your Vercel frontend + localhost for development
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://nails-by-mykala.vercel.app",   # Production
-        "https://*.vercel.app",                 # All Vercel previews (optional)
-        "http://localhost:3000",                # Local dev
-        "http://127.0.0.1:3000"
+        "https://nails-by-mykala.vercel.app",
+        "https://*.vercel.app",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Mount static files (uncomment if you still need local static serving)
-# app.mount("/static", StaticFiles(directory="static"), name="static")
+from routers import admin, auth, comments, images, ai
 
-# Include routers
 app.include_router(auth.router)
 app.include_router(admin.router)
 app.include_router(comments.router)
 app.include_router(images.router)
+app.include_router(ai.router)
+
 
 @app.get("/")
 async def root():
-    return {"message": "Ground control to Major Tom! Can you hear me, Major Tom? MAJOR TOM!!!"}
+    return {"message": "Nails by Mykala API is running ✅"}
