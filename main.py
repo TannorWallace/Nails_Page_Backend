@@ -9,7 +9,7 @@ from database import Base, engine
 # Now create tables (this will work)
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Nails by Mykala API", debug=True)
+app = FastAPI(title="Nails by Mykala API", debug=False)
 
 app.add_middleware(
     CORSMiddleware,
