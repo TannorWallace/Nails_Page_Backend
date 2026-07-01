@@ -4,9 +4,8 @@ import cloudinary.uploader
 from typing import List
 from database import get_db
 from datetime import datetime
-from typing import List, Optional
 from models import ArtImage, Comment, User
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 from security import get_current_user, get_current_admin, get_password_hash
 from schemas import AdminCommentOut, AdminUserCreate, ArtImageOut, UserOut
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
@@ -71,28 +70,33 @@ async def admin_upload_images_cloudinary(
     return db_image
 
 
-
-
 @router.post(
-    "/images/upload_mult/cloudinary", 
+    "/images/upload_mult/cloudinary",
     response_model=List[ArtImageOut],
     dependencies=[Depends(get_current_admin)],
-    summary="Upload multiple images at once (faster)"
+    summary="Upload multiple images at once",
+    description="Select multiple image files. All images will use the same title and artist. Uploads happen in parallel for speed."
 )
 async def admin_post_mult_imgs_cloudinary(
-    files: List[UploadFile] = File(..., description="Select multiple images"),
-    title: str = Form("Nail Art by Mykala", description="Default title if none provided per image"),
-    artist: str = Form("Mykala Wallace"),
+    files: List[UploadFile] = File(
+        ...,
+        description="Click here and select multiple images (hold Ctrl or Cmd to select more than one)"
+    ),
+    title: str = Form(
+        default="Nail Art by Mykala",
+        description="Title to apply to all uploaded images"
+    ),
+    artist: str = Form(
+        default="Mykala Wallace",
+        description="Artist name for all images"
+    ),
     current_admin: User = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
-    if not files:
-        raise HTTPException(status_code=400, detail="No images uploaded.")
+    if not files or len(files) == 0:
+        raise HTTPException(status_code=400, detail="No images were uploaded.")
 
-    uploaded_images = []
-
-    async def upload_single(file: UploadFile):
-        """Upload one image to Cloudinary"""
+    async def upload_one(file: UploadFile):
         result = await asyncio.to_thread(
             cloudinary.uploader.upload,
             file.file,
@@ -112,7 +116,7 @@ async def admin_post_mult_imgs_cloudinary(
         return new_image
 
     # Upload all images in parallel (much faster)
-    tasks = [upload_single(file) for file in files]
+    tasks = [upload_one(file) for file in files]
     uploaded_images = await asyncio.gather(*tasks)
 
     return uploaded_images
